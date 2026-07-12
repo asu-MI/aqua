@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>みんなの水族館 - スキャン</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@500;700;900&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ocean-deep:#031f33; --ocean-mid:#0a4d68; --ocean-light:#1c8aa8;
+    --bio:#6be8e0; --coral:#ff8f6b; --coral-deep:#e56a4a;
+    --foam:#eafcff;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{ margin:0; padding:0; width:100%; height:100%; overflow:hidden;
+    background:linear-gradient(180deg,#0d5f82 0%, #0a4d68 45%, #031f33 100%);
+    font-family:'Zen Kaku Gothic New', sans-serif; touch-action:none; }
+  .screen{ position:fixed; inset:0; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; padding: max(24px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom)); }
+  .hidden{ display:none !important; }
+
+  .header{ position:fixed; top:max(16px, env(safe-area-inset-top)); left:0; right:0;
+    display:flex; flex-direction:column; align-items:center; gap:4px; z-index:5; }
+  .header .title{ font-family:'M PLUS Rounded 1c', sans-serif; font-weight:900; font-size:19px;
+    color:var(--foam); text-shadow:0 0 14px rgba(107,232,224,0.5); }
+  .header .session{ font-family:'JetBrains Mono', monospace; font-size:11px; color:var(--bio); opacity:0.75; letter-spacing:0.1em; }
+
+  .icon-circle{ width:96px; height:96px; border-radius:50%;
+    background:rgba(107,232,224,0.12); border:1px solid rgba(107,232,224,0.35);
+    display:flex; align-items:center; justify-content:center; margin-bottom:22px; }
+  .icon-circle svg{ width:44px; height:44px; color:var(--bio); }
+
+  .headline{ font-family:'M PLUS Rounded 1c', sans-serif; font-weight:700; font-size:20px;
+    color:var(--foam); text-align:center; margin-bottom:10px; }
+  .subline{ font-size:14px; color:var(--foam); opacity:0.75; text-align:center; margin-bottom:34px; max-width:280px; line-height:1.7; }
+
+  .primary-btn{
+    display:flex; align-items:center; gap:10px; justify-content:center;
+    background:linear-gradient(180deg, var(--coral), var(--coral-deep));
+    color:#fff8f2; border:none; border-radius:999px; padding:18px 32px;
+    font-family:'M PLUS Rounded 1c', sans-serif; font-weight:700; font-size:17px;
+    box-shadow:0 10px 24px rgba(229,106,74,0.45), 0 0 0 1px rgba(255,255,255,0.15) inset;
+    width:min(320px, 80vw);
+  }
+  .primary-btn:active{ transform:scale(0.96); }
+  .primary-btn svg{ width:22px; height:22px; flex-shrink:0; }
+
+  .secondary-btn{
+    margin-top:14px; background:transparent; border:1px solid rgba(234,252,255,0.35);
+    color:var(--foam); border-radius:999px; padding:13px 26px;
+    font-family:'Zen Kaku Gothic New', sans-serif; font-weight:500; font-size:14px;
+    width:min(320px, 80vw);
+  }
+  .secondary-btn:active{ opacity:0.7; }
+
+  /* preview */
+  .preview-card{
+    background:rgba(255,255,255,0.06); border:1px solid rgba(107,232,224,0.3);
+    border-radius:20px; padding:20px; display:flex; flex-direction:column; align-items:center;
+    backdrop-filter:blur(6px);
+  }
+  .preview-stage{
+    width:min(260px, 60vw); height:min(260px, 60vw); border-radius:14px;
+    background:
+      linear-gradient(135deg, rgba(107,232,224,0.08), transparent 60%),
+      repeating-conic-gradient(rgba(255,255,255,0.03) 0% 25%, transparent 0% 50%) 0 0/24px 24px,
+      rgba(3,31,51,0.5);
+    display:flex; align-items:center; justify-content:center; overflow:hidden; margin-bottom:18px;
+  }
+  .preview-stage canvas{ max-width:88%; max-height:88%; filter:drop-shadow(0 0 12px rgba(107,232,224,0.5)); }
+  .preview-label{ font-size:13px; color:var(--foam); opacity:0.75; margin-bottom:16px; }
+
+  /* overlay (processing / sending) */
+  .overlay{
+    position:fixed; inset:0; z-index:30; background:rgba(2,17,28,0.78);
+    backdrop-filter:blur(4px); display:flex; align-items:center; justify-content:center;
+    flex-direction:column; gap:18px; opacity:0; pointer-events:none; transition:opacity 0.3s ease;
+  }
+  .overlay.show{ opacity:1; pointer-events:auto; }
+  .overlay-text{ color:var(--foam); font-family:'M PLUS Rounded 1c', sans-serif; font-weight:700; font-size:16px; text-align:center; width:80%; }
+  .bubble-loader{ display:flex; gap:10px; }
+  .bubble-loader span{ width:12px; height:12px; border-radius:50%; background:var(--bio);
+    box-shadow:0 0 10px var(--bio); animation:bob 1s infinite ease-in-out; }
+  .bubble-loader span:nth-child(2){ animation-delay:0.15s; }
+  .bubble-loader span:nth-child(3){ animation-delay:0.3s; }
+  @keyframes bob{ 0%,80%,100%{ transform:translateY(0); opacity:0.5;} 40%{ transform:translateY(-14px); opacity:1;} }
+
+  .success-check{ width:64px; height:64px; border-radius:50%; background:rgba(92,226,122,0.15);
+    border:1px solid rgba(92,226,122,0.5); display:flex; align-items:center; justify-content:center; }
+  .success-check svg{ width:32px; height:32px; color:#5ce27a; }
+
+  .toast{
+    position:fixed; left:50%; bottom:40px; transform:translateX(-50%) translateY(20px);
+    background:rgba(3,31,51,0.92); color:var(--foam); border:1px solid rgba(255,143,107,0.5);
+    padding:13px 18px; border-radius:10px; font-size:14px; z-index:40; max-width:85%;
+    text-align:center; opacity:0; transition:all 0.3s ease; pointer-events:none;
+  }
+  .toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="title">みんなの水族館</div>
+  <div class="session" id="sessionLabel">SESSION ----</div>
+</div>
+
+<!-- 起動画面：QRなしで開かれた場合 -->
+<div class="screen" id="screenNoParams">
+  <div class="icon-circle">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><line x1="14" y1="14" x2="21" y2="14"/><line x1="14" y1="21" x2="21" y2="21"/><line x1="17" y1="14" x2="17" y2="21"/></svg>
+  </div>
+  <div class="headline">QRコードから開いてください</div>
+  <div class="subline">大きな画面に表示されているQRコードをこのiPadのカメラで読み取ると、参加ページが開きます。</div>
+</div>
+
+<!-- ホーム画面：スキャン待機 -->
+<div class="screen hidden" id="screenHome">
+  <div class="icon-circle">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+  </div>
+  <div class="headline">描いた生き物をスキャンしよう</div>
+  <div class="subline">白い紙に濃いペンで生き物を描いたら、カメラで撮影してください。大きな画面の水槽に泳ぎ出します。</div>
+  <button class="primary-btn" id="scanBtn" type="button">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+    カメラを起動する
+  </button>
+</div>
+
+<!-- プレビュー画面：抽出結果の確認 -->
+<div class="screen hidden" id="screenPreview">
+  <div class="preview-card">
+    <div class="preview-stage"><canvas id="previewCanvas"></canvas></div>
+    <div class="preview-label">この生き物を放流しますか？</div>
+    <button class="primary-btn" id="releaseBtn" type="button">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h16M14 6l6 6-6 6"/></svg>
+      水槽に放流する
+    </button>
+    <button class="secondary-btn" id="retakeBtn" type="button">撮り直す</button>
+  </div>
+</div>
+
+<!-- 完了画面 -->
+<div class="screen hidden" id="screenDone">
+  <div class="success-check">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+  </div>
+  <div class="headline" style="margin-top:18px;">放流しました！</div>
+  <div class="subline">大きな画面を見てみよう。続けてもう1匹スキャンできます。</div>
+  <button class="primary-btn" id="againBtn" type="button">もう1匹スキャンする</button>
+</div>
+
+<input type="file" id="fileInput" accept="image/*" capture="environment" style="display:none">
+
+<div class="overlay" id="overlay">
+  <div class="bubble-loader"><span></span><span></span><span></span></div>
+  <div class="overlay-text" id="overlayText">生き物を抽出中...</div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---------- URL params ----------
+  var params = new URLSearchParams(window.location.search);
+  var DB_URL = params.get('db') ? decodeURIComponent(params.get('db')) : null;
+  var SESSION = params.get('s');
+
+  function show(id){
+    ['screenNoParams','screenHome','screenPreview','screenDone'].forEach(function(s){
+      document.getElementById(s).classList.toggle('hidden', s!==id);
+    });
+  }
+
+  if(!DB_URL || !SESSION){
+    show('screenNoParams');
+    return;
+  }
+  document.getElementById('sessionLabel').textContent = 'SESSION ' + SESSION;
+  show('screenHome');
+
+  // ---------- Utility ----------
+  function rand(a,b){ return a+Math.random()*(b-a); }
+  function clamp(v,a,b){ return Math.max(a,Math.min(b,v)); }
+  function smoothstep(e0,e1,x){ var t=clamp((x-e0)/(e1-e0),0,1); return t*t*(3-2*t); }
+
+  var toastEl = document.getElementById('toast');
+  var toastTimer = null;
+  function showToast(msg){
+    toastEl.textContent = msg;
+    toastEl.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ toastEl.classList.remove('show'); }, 2800);
+  }
+  var overlayEl = document.getElementById('overlay');
+  var overlayTextEl = document.getElementById('overlayText');
+  function showOverlay(text){ overlayTextEl.textContent = text; overlayEl.classList.add('show'); }
+  function hideOverlay(){ overlayEl.classList.remove('show'); }
+
+  // ---------- Extraction (同じアルゴリズムを表示画面と共有せず、こちらで完結) ----------
+  function extractCreature(img, cb){
+    var maxDim = 640;
+    var scale = Math.min(1, maxDim/Math.max(img.width, img.height));
+    var w = Math.max(1, Math.round(img.width*scale));
+    var h = Math.max(1, Math.round(img.height*scale));
+    var work = document.createElement('canvas');
+    work.width = w; work.height = h;
+    var wctx = work.getContext('2d');
+    wctx.drawImage(img, 0, 0, w, h);
+
+    var imgData;
+    try{ imgData = wctx.getImageData(0,0,w,h); } catch(e){ cb(null); return; }
+    var data = imgData.data;
+
+    var sumR=0,sumG=0,sumB=0,n=0;
+    var margin = Math.max(2, Math.round(Math.min(w,h)*0.03));
+    for(var y=0;y<h;y++){
+      for(var x=0;x<w;x++){
+        var onBorder = x<margin||y<margin||x>=w-margin||y>=h-margin;
+        if(!onBorder) continue;
+        var idx=(y*w+x)*4;
+        sumR+=data[idx]; sumG+=data[idx+1]; sumB+=data[idx+2]; n++;
+      }
+    }
+    var bgR = n?sumR/n:255, bgG = n?sumG/n:255, bgB = n?sumB/n:255;
+
+    var alphaMask = new Float32Array(w*h);
+    var maxDist = Math.sqrt(3*255*255);
+    var lowT=0.10, highT=0.28;
+    var minX=w,minY=h,maxX=0,maxY=0,foundCount=0;
+
+    for(var yy=0;yy<h;yy++){
+      for(var xx=0;xx<w;xx++){
+        var i2=(yy*w+xx)*4;
+        var dr=data[i2]-bgR, dg=data[i2+1]-bgG, db=data[i2+2]-bgB;
+        var dist = Math.sqrt(dr*dr+dg*dg+db*db)/maxDist;
+        var a = smoothstep(lowT,highT,dist);
+        alphaMask[yy*w+xx]=a;
+        if(a>0.35){
+          foundCount++;
+          if(xx<minX)minX=xx; if(xx>maxX)maxX=xx;
+          if(yy<minY)minY=yy; if(yy>maxY)maxY=yy;
+        }
+      }
+    }
+    if(foundCount<60 || maxX<=minX || maxY<=minY){ cb(null); return; }
+
+    var pad = Math.round(Math.max(maxX-minX,maxY-minY)*0.06)+2;
+    minX=Math.max(0,minX-pad); minY=Math.max(0,minY-pad);
+    maxX=Math.min(w-1,maxX+pad); maxY=Math.min(h-1,maxY+pad);
+    var cw=maxX-minX+1, ch=maxY-minY+1;
+    if(cw<6||ch<6){ cb(null); return; }
+
+    var out = document.createElement('canvas');
+    out.width=cw; out.height=ch;
+    var octx = out.getContext('2d');
+    var outData = octx.createImageData(cw,ch);
+    var od = outData.data;
+    for(var oy=0;oy<ch;oy++){
+      for(var ox=0;ox<cw;ox++){
+        var sx=minX+ox, sy=minY+oy;
+        var srcIdx=(sy*w+sx)*4, dstIdx=(oy*cw+ox)*4;
+        var a2 = alphaMask[sy*w+sx];
+        od[dstIdx]=data[srcIdx]; od[dstIdx+1]=data[srcIdx+1]; od[dstIdx+2]=data[srcIdx+2];
+        od[dstIdx+3]=Math.round(clamp(a2,0,1)*255);
+      }
+    }
+    octx.putImageData(outData,0,0);
+    cb({ canvas: out, w: cw, h: ch });
+  }
+
+  // ---------- State ----------
+  var currentSprite = null; // {canvas, w, h}
+
+  function renderPreview(sprite){
+    var cv = document.getElementById('previewCanvas');
+    var maxSide = 240;
+    var scale = Math.min(1, maxSide/Math.max(sprite.w, sprite.h));
+    cv.width = Math.round(sprite.w*scale);
+    cv.height = Math.round(sprite.h*scale);
+    var pctx = cv.getContext('2d');
+    pctx.imageSmoothingEnabled = true;
+    pctx.drawImage(sprite.canvas, 0, 0, cv.width, cv.height);
+  }
+
+  function toUploadDataURL(sprite, cb){
+    // アップロード用にさらに縮小して転送量を抑える
+    var maxSide = 260;
+    var scale = Math.min(1, maxSide/Math.max(sprite.w, sprite.h));
+    var uw = Math.max(1, Math.round(sprite.w*scale));
+    var uh = Math.max(1, Math.round(sprite.h*scale));
+    var uc = document.createElement('canvas');
+    uc.width = uw; uc.height = uh;
+    var uctx = uc.getContext('2d');
+    uctx.drawImage(sprite.canvas, 0, 0, uw, uh);
+    cb(uc.toDataURL('image/png'), uw, uh);
+  }
+
+  // ---------- Camera flow ----------
+  var scanBtn = document.getElementById('scanBtn');
+  var fileInput = document.getElementById('fileInput');
+  var retakeBtn = document.getElementById('retakeBtn');
+  var releaseBtn = document.getElementById('releaseBtn');
+  var againBtn = document.getElementById('againBtn');
+
+  scanBtn.addEventListener('click', function(){
+    fileInput.value = '';
+    fileInput.click();
+  });
+  retakeBtn.addEventListener('click', function(){
+    currentSprite = null;
+    show('screenHome');
+  });
+  againBtn.addEventListener('click', function(){
+    show('screenHome');
+  });
+
+  fileInput.addEventListener('change', function(e){
+    var file = e.target.files && e.target.files[0];
+    if(!file) return;
+    showOverlay('生き物を抽出中...');
+    var reader = new FileReader();
+    reader.onload = function(ev){
+      var img = new Image();
+      img.onload = function(){
+        setTimeout(function(){
+          extractCreature(img, function(result){
+            hideOverlay();
+            if(!result){
+              showToast('生き物が見つかりませんでした。濃い線で、はっきり描いてみてください。');
+              show('screenHome');
+              return;
+            }
+            currentSprite = result;
+            renderPreview(result);
+            show('screenPreview');
+          });
+        }, 30);
+      };
+      img.onerror = function(){
+        hideOverlay();
+        showToast('画像の読み込みに失敗しました。もう一度お試しください。');
+      };
+      img.src = ev.target.result;
+    };
+    reader.onerror = function(){
+      hideOverlay();
+      showToast('画像の読み込みに失敗しました。もう一度お試しください。');
+    };
+    reader.readAsDataURL(file);
+  });
+
+  releaseBtn.addEventListener('click', function(){
+    if(!currentSprite) return;
+    showOverlay('放流しています...');
+    toUploadDataURL(currentSprite, function(dataUrl, w, h){
+      var base = DB_URL.replace(/\/$/,'');
+      var url = base + '/aquariums/' + SESSION + '/fish.json';
+      fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ img: dataUrl, w: w, h: h, ts: Date.now() })
+      }).then(function(res){
+        hideOverlay();
+        if(!res.ok) throw new Error('upload failed: ' + res.status);
+        currentSprite = null;
+        show('screenDone');
+      }).catch(function(err){
+        hideOverlay();
+        showToast('送信に失敗しました。通信環境を確認してもう一度お試しください。');
+      });
+    });
+  });
+
+})();
+</script>
+</body>
+</html>
