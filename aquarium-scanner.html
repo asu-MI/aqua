@@ -121,7 +121,7 @@
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
   </div>
   <div class="headline">描いた生き物をスキャンしよう</div>
-  <div class="subline">白い紙に濃いペンで生き物を描いたら、カメラで撮影してください。大きな画面の水槽に泳ぎ出します。</div>
+  <div class="subline">白い紙に濃いペンで生き物を描いたら、点線のわくだけが写るように撮影してください。説明文などが写り込まないよう、少し余白を残して枠を狙うのがコツです。</div>
   <button class="primary-btn" id="scanBtn" type="button">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
     カメラを起動する
@@ -215,34 +215,149 @@
     try{ imgData = wctx.getImageData(0,0,w,h); } catch(e){ cb(null); return; }
     var data = imgData.data;
 
-    var sumR=0,sumG=0,sumB=0,n=0;
     var margin = Math.max(2, Math.round(Math.min(w,h)*0.03));
+    var borderR=[], borderG=[], borderB=[];
     for(var y=0;y<h;y++){
       for(var x=0;x<w;x++){
         var onBorder = x<margin||y<margin||x>=w-margin||y>=h-margin;
         if(!onBorder) continue;
         var idx=(y*w+x)*4;
-        sumR+=data[idx]; sumG+=data[idx+1]; sumB+=data[idx+2]; n++;
+        borderR.push(data[idx]); borderG.push(data[idx+1]); borderB.push(data[idx+2]);
       }
     }
-    var bgR = n?sumR/n:255, bgG = n?sumG/n:255, bgB = n?sumB/n:255;
+    function median(arr){
+      if(!arr.length) return 255;
+      arr.sort(function(a,b){ return a-b; });
+      return arr[Math.floor(arr.length/2)];
+    }
+    // 平均ではなく中央値を使うことで、縁に紙以外のもの（他の紙や机など）が
+    // 写り込んでいても背景色の推定が崩れにくくなる
+    var bgR = median(borderR), bgG = median(borderG), bgB = median(borderB);
 
     var alphaMask = new Float32Array(w*h);
     var maxDist = Math.sqrt(3*255*255);
     var lowT=0.10, highT=0.28;
-    var minX=w,minY=h,maxX=0,maxY=0,foundCount=0;
 
     for(var yy=0;yy<h;yy++){
       for(var xx=0;xx<w;xx++){
         var i2=(yy*w+xx)*4;
         var dr=data[i2]-bgR, dg=data[i2+1]-bgG, db=data[i2+2]-bgB;
         var dist = Math.sqrt(dr*dr+dg*dg+db*db)/maxDist;
-        var a = smoothstep(lowT,highT,dist);
-        alphaMask[yy*w+xx]=a;
-        if(a>0.35){
+        alphaMask[yy*w+xx] = smoothstep(lowT,highT,dist);
+      }
+    }
+
+    // ---------------------------------------------------------------
+    // 写真には目的の絵以外（用紙の外側、他の紙、机、影など）も写り込みやすいため、
+    // 単純に「検出された全ピクセルの外接矩形」を取ると、離れた場所のノイズに
+    // 引っ張られて絵とは無関係な範囲まで切り抜いてしまうことがある。
+    // そこで、まず粗いグリッドで「まとまり（クラスター）」を作り、
+    // 一番大きいまとまり（＝目的の絵）だけを採用する。
+    // 眉やヒレのように輪郭から少し離れて描かれるパーツも同じまとまりに
+    // 含められるよう、グリッド上で軽く膨張させてから連結成分を取る。
+    // ---------------------------------------------------------------
+    var CELL = 4;
+    var cw = Math.ceil(w/CELL), ch = Math.ceil(h/CELL);
+    var coarse = new Uint8Array(cw*ch);
+    // 写真の外周（他の紙・机・印刷文字などが写り込みやすい）は候補から除外し、
+    // 中央付近だけを対象にする
+    var TRIM = 0.12;
+    var trimX0 = Math.round(w*TRIM), trimX1 = Math.round(w*(1-TRIM));
+    var trimY0 = Math.round(h*TRIM), trimY1 = Math.round(h*(1-TRIM));
+    for(var y2=0;y2<h;y2++){
+      if(y2<trimY0 || y2>=trimY1) continue;
+      for(var x2=0;x2<w;x2++){
+        if(x2<trimX0 || x2>=trimX1) continue;
+        if(alphaMask[y2*w+x2] > 0.35){
+          coarse[((y2/CELL)|0)*cw + ((x2/CELL)|0)] = 1;
+        }
+      }
+    }
+    var DILR = 2; // 粗いグリッド上で2セル分（≒画像の3〜4%程度）膨張させ、近接パーツを統合
+    for(var iter=0; iter<DILR; iter++){
+      var next = coarse.slice();
+      for(var cy=0;cy<ch;cy++){
+        for(var cx=0;cx<cw;cx++){
+          var cidx = cy*cw+cx;
+          if(coarse[cidx]) continue;
+          var found=false;
+          for(var dy=-1;dy<=1 && !found;dy++){
+            for(var dx=-1;dx<=1 && !found;dx++){
+              if(dx===0&&dy===0) continue;
+              var nx=cx+dx, ny=cy+dy;
+              if(nx<0||ny<0||nx>=cw||ny>=ch) continue;
+              if(coarse[ny*cw+nx]) found=true;
+            }
+          }
+          if(found) next[cidx]=1;
+        }
+      }
+      coarse = next;
+    }
+    var labels = new Int32Array(cw*ch).fill(-1);
+    var curLabel=0, stack=[];
+    var compSize=[], compSumX=[], compSumY=[];
+    for(var ci=0; ci<cw*ch; ci++){
+      if(coarse[ci]===1 && labels[ci]===-1){
+        var size=0, sumX=0, sumY=0;
+        stack.length=0; stack.push(ci); labels[ci]=curLabel;
+        while(stack.length){
+          var cur = stack.pop(); size++;
+          var ccx = cur % cw, ccy = (cur/cw)|0;
+          sumX += ccx; sumY += ccy;
+          for(var dy2=-1;dy2<=1;dy2++){
+            for(var dx2=-1;dx2<=1;dx2++){
+              if(dx2===0&&dy2===0) continue;
+              var nnx=ccx+dx2, nny=ccy+dy2;
+              if(nnx<0||nny<0||nnx>=cw||nny>=ch) continue;
+              var nidx=nny*cw+nnx;
+              if(coarse[nidx]===1 && labels[nidx]===-1){ labels[nidx]=curLabel; stack.push(nidx); }
+            }
+          }
+        }
+        compSize[curLabel]=size; compSumX[curLabel]=sumX; compSumY[curLabel]=sumY;
+        curLabel++;
+      }
+    }
+    if(curLabel===0){ cb(null); return; }
+
+    // 「一番大きいまとまり」ではなく「大きさ×中心に近いか」でスコアリングする。
+    // これにより、印刷された説明文のように大きいが端に寄っているまとまりより、
+    // 写真の中央付近にある（＝ユーザーが意図して撮った）絵を優先できる
+    var centerCx = cw/2, centerCy = ch/2;
+    var normDist = Math.sqrt(cw*cw+ch*ch)/2;
+    var bestLabel=-1, bestScore=-1;
+    for(var lab=0; lab<curLabel; lab++){
+      var s = compSize[lab];
+      if(s < 3) continue;
+      var mx = compSumX[lab]/s, my = compSumY[lab]/s;
+      var d = Math.sqrt((mx-centerCx)*(mx-centerCx)+(my-centerCy)*(my-centerCy))/normDist;
+      var score = s * Math.exp(-2.5*d);
+      if(score > bestScore){ bestScore = score; bestLabel = lab; }
+    }
+    if(bestLabel===-1){ cb(null); return; }
+
+    var cminX=cw,cminY=ch,cmaxX=0,cmaxY=0;
+    for(var cj=0;cj<cw*ch;cj++){
+      if(labels[cj]===bestLabel){
+        var jx=cj%cw, jy=(cj/cw)|0;
+        if(jx<cminX)cminX=jx; if(jx>cmaxX)cmaxX=jx;
+        if(jy<cminY)cminY=jy; if(jy>cmaxY)cmaxY=jy;
+      }
+    }
+    var regionMinX = Math.max(0, cminX*CELL - CELL);
+    var regionMinY = Math.max(0, cminY*CELL - CELL);
+    var regionMaxX = Math.min(w-1, (cmaxX+1)*CELL + CELL);
+    var regionMaxY = Math.min(h-1, (cmaxY+1)*CELL + CELL);
+
+    // 上で絞り込んだ領域の中だけで、あらためて正確な外接矩形を求める
+    var minX=w,minY=h,maxX=0,maxY=0,foundCount=0;
+    for(var y3=regionMinY;y3<=regionMaxY;y3++){
+      for(var x3=regionMinX;x3<=regionMaxX;x3++){
+        if(alphaMask[y3*w+x3] > 0.35){
           foundCount++;
-          if(xx<minX)minX=xx; if(xx>maxX)maxX=xx;
-          if(yy<minY)minY=yy; if(yy>maxY)maxY=yy;
+          if(x3<minX)minX=x3; if(x3>maxX)maxX=x3;
+          if(y3<minY)minY=y3; if(y3>maxY)maxY=y3;
         }
       }
     }
