@@ -2426,15 +2426,20 @@ var qrcode = function() {
 
 </script>
 
+<script src="aquarium-config.js"></script>
 <script>
 (function(){
   "use strict";
 
   // =====================================================================
-  // 設定：ここを自分の環境に合わせて書き換えてください
+  // 設定は aquarium-config.js に分離しました。
+  // FIREBASE_DB_URL と SCANNER_PAGE_URL は aquarium-config.js を編集してください。
+  // このファイル(aquarium-display.html)は直接編集しないでください。
   // =====================================================================
-  var FIREBASE_DB_URL = https://aqua-3816d-default-rtdb.firebaseio.com"; // FirebaseのRealtime Database URL（クイズシステムと同じものでOK）
-  var SCANNER_PAGE_URL = "https://asu-mi.github.io/aqua/aquarium-scanner.html"; // aquarium-scanner.html を置いた公開URL
+  if(typeof FIREBASE_DB_URL === 'undefined' || typeof SCANNER_PAGE_URL === 'undefined'){
+    document.write('<p style="color:#fff;background:#a00;padding:16px;font-family:sans-serif;">'
+      + 'aquarium-config.js が読み込めていません。同じフォルダに aquarium-config.js を置いてください。</p>');
+  }
 
   // =====================================================================
   // セッション作成
