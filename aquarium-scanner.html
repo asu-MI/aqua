@@ -263,9 +263,21 @@
       for(var ox=0;ox<cw;ox++){
         var sx=minX+ox, sy=minY+oy;
         var srcIdx=(sy*w+sx)*4, dstIdx=(oy*cw+ox)*4;
-        var a2 = alphaMask[sy*w+sx];
-        od[dstIdx]=data[srcIdx]; od[dstIdx+1]=data[srcIdx+1]; od[dstIdx+2]=data[srcIdx+2];
-        od[dstIdx+3]=Math.round(clamp(a2,0,1)*255);
+        var aRaw = clamp(alphaMask[sy*w+sx],0,1);
+        var a2 = aRaw < 0.15 ? 0 : aRaw; // ごく弱いアルファは思い切って切り捨て、色ノイズの元を断つ
+        if(a2 === 0){
+          od[dstIdx]=0; od[dstIdx+1]=0; od[dstIdx+2]=0; od[dstIdx+3]=0;
+          continue;
+        }
+        var aSafe = Math.max(a2, 0.30); // 増幅しすぎないよう下限を高めに設定
+        // 半透明の縁ピクセルは背景色とブレンドされているので、背景成分を差し引いて元の色を推定する
+        var rr = (data[srcIdx]   - (1-aSafe)*bgR) / aSafe;
+        var gg = (data[srcIdx+1] - (1-aSafe)*bgG) / aSafe;
+        var bb = (data[srcIdx+2] - (1-aSafe)*bgB) / aSafe;
+        od[dstIdx]   = Math.round(clamp(rr,0,255));
+        od[dstIdx+1] = Math.round(clamp(gg,0,255));
+        od[dstIdx+2] = Math.round(clamp(bb,0,255));
+        od[dstIdx+3] = Math.round(a2*255);
       }
     }
     octx.putImageData(outData,0,0);
