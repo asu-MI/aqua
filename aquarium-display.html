@@ -2725,8 +2725,8 @@ var qrcode = function() {
   // =====================================================================
   var fishes = [];
   function Fish(el, w0, h0, isSeed, faceLeft, fixedBoxW, fixedBoxH){
-    var boxW = fixedBoxW || rand(W*0.05, W*0.10);
-    var boxH = fixedBoxH || rand(H*0.09, H*0.16);
+    var boxW = fixedBoxW || rand(W*0.075, W*0.145);
+    var boxH = fixedBoxH || rand(H*0.13, H*0.23);
     var ratio = w0/h0;
     var scale = Math.min(boxW/w0, boxH/h0);
     this.w = w0*scale; this.h = h0*scale;
@@ -2755,6 +2755,9 @@ var qrcode = function() {
     if(this.x < -this.w*1.2 && this.dir===-1) this.dir=1;
     this.y = this.baseY + Math.sin(time*this.bobFreq+this.phase)*this.bobAmp;
   };
+  var tintScratch = document.createElement('canvas');
+  var tintScratchCtx = tintScratch.getContext('2d');
+
   Fish.prototype.draw = function(ctx){
     var age = time-this.spawnTime;
     var growIn = smoothstep(0,0.7,age);
@@ -2776,17 +2779,33 @@ var qrcode = function() {
     ctx.globalAlpha = depthAlpha;
     ctx.shadowColor = 'rgba(107,232,224,'+(0.35+glow*0.35).toFixed(2)+')';
     ctx.shadowBlur = 14+glow*10;
-    ctx.drawImage(this.sprite, -this.w/2, -this.h/2, this.w, this.h);
     if(this.depth>0.15){
-      ctx.globalCompositeOperation = 'source-atop';
-      ctx.globalAlpha = this.depth*0.35;
-      ctx.fillStyle = '#0a4d68';
-      ctx.fillRect(-this.w/2,-this.h/2,this.w,this.h);
+      // 奥行きの青みは、キャンバス全体ではなく「この魚の透明部分を除いた形」だけに
+      // 乗せる必要があるので、いったんオフスクリーンで合成してから貼り付ける
+      var sw = Math.max(1, Math.round(this.w));
+      var sh = Math.max(1, Math.round(this.h));
+      if(tintScratch.width!==sw || tintScratch.height!==sh){
+        tintScratch.width = sw; tintScratch.height = sh;
+      }
+      tintScratchCtx.clearRect(0,0,sw,sh);
+      tintScratchCtx.globalCompositeOperation = 'source-over';
+      tintScratchCtx.globalAlpha = 1;
+      tintScratchCtx.drawImage(this.sprite, 0, 0, sw, sh);
+      tintScratchCtx.globalCompositeOperation = 'source-atop';
+      tintScratchCtx.globalAlpha = this.depth*0.35;
+      tintScratchCtx.fillStyle = '#0a4d68';
+      tintScratchCtx.fillRect(0,0,sw,sh);
+      tintScratchCtx.globalCompositeOperation = 'source-over';
+      tintScratchCtx.globalAlpha = 1;
+      ctx.drawImage(tintScratch, -this.w/2, -this.h/2, this.w, this.h);
+    } else {
+      ctx.drawImage(this.sprite, -this.w/2, -this.h/2, this.w, this.h);
     }
     ctx.restore();
   };
   var MAX_FISH = 40;       // 同時に泳がせる最大数（最初から泳いでいる resident 種は含めない）
   var FADE_DURATION = 1.6; // 退場フェードにかける秒数
+
 
   function addFish(el, w0, h0){
     var f = new Fish(el, w0, h0, false);
