@@ -415,7 +415,7 @@
 
   function toUploadDataURL(sprite, cb){
     // アップロード用にさらに縮小して転送量を抑える
-    var maxSide = 260;
+    var maxSide = 340;
     var scale = Math.min(1, maxSide/Math.max(sprite.w, sprite.h));
     var uw = Math.max(1, Math.round(sprite.w*scale));
     var uh = Math.max(1, Math.round(sprite.h*scale));
